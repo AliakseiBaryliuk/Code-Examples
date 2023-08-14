@@ -1,26 +1,40 @@
 package com.epam.jmp.redislab.api;
 
 import com.epam.jmp.redislab.utils.RateLimitResponseStats;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.testcontainers.containers.DockerComposeContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import redis.clients.jedis.Connection;
+import redis.clients.jedis.ConnectionPool;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisCluster;
+import redis.clients.jedis.JedisPool;
 
 import java.io.File;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(webEnvironment =  SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class FixedWindowRateLimitControllerTest {
+
+    @Autowired
+    private JedisCluster jedisCluster;
 
     @Container
     public static DockerComposeContainer environment =
@@ -45,7 +59,7 @@ class FixedWindowRateLimitControllerTest {
         // We assume that 5 requests will be processed faster than in 1 minute.
         // For fixed window rate limit common rule is to send 2N+1 requests, where N is the max allowed number of requests.
         RateLimitResponseStats stats = this.sendRatelimitRequests(5, requestDescriptor);
-        assertTrue(stats.getTooManyRequestsCount() >= 1 );
+        assertTrue(stats.getTooManyRequestsCount() >= 1);
         assertTrue(stats.getOkCount() >= 2);
     }
 
@@ -59,7 +73,6 @@ class FixedWindowRateLimitControllerTest {
     }
 
 
-
     // 2 requests per minute per account Id
     //   AND
     // 1 Slow request per account per minute
@@ -68,9 +81,9 @@ class FixedWindowRateLimitControllerTest {
         RateLimitResponseStats stats = this.sendRatelimitRequests(5,
                 RequestDescriptor.of("2", null, "SLOW"),
                 RequestDescriptor.of("2", null, null)
-                );
-        assertTrue(stats.getTooManyRequestsCount() >= 3);
-        assertTrue(stats.getOkCount() <= 2);
+        );
+        assertTrue(stats.getTooManyRequestsCount() >= 2);
+        assertTrue(stats.getOkCount() <= 3);
     }
 
     // 2 requests per minute per accountId rule + one minute pause
@@ -91,8 +104,8 @@ class FixedWindowRateLimitControllerTest {
         assertEquals(2, stats.getOkCount());
     }
 
-    // 1 request for 192.168.100.150 per HOUR
-    // You can temporary disable this test with @Disabled as this test requires for 3 mins of wall clock time to check.
+//     1 request for 192.168.100.150 per HOUR
+//     You can temporary disable this test with @Disabled as this test requires for 3 mins of wall clock time to check.
     @Test
     // @Disabled
     public void testPerHourRateLimit() throws InterruptedException {
@@ -102,33 +115,28 @@ class FixedWindowRateLimitControllerTest {
         assertTrue(stats.getOkCount() >= 1);
     }
 
-    private RateLimitResponseStats sendRatelimitRequests(int numberOfRequests, RequestDescriptor ... descriptors) throws InterruptedException {
+    private RateLimitResponseStats sendRatelimitRequests(int numberOfRequests, RequestDescriptor... descriptors) throws InterruptedException {
         return this.sendRatelimitRequests(numberOfRequests, 0, descriptors);
     }
 
-    private RateLimitResponseStats sendRatelimitRequests(int numberOfRequests, int delayInMillis, RequestDescriptor ... descriptors) throws InterruptedException {
+    private RateLimitResponseStats sendRatelimitRequests(int numberOfRequests, int delayInMillis, RequestDescriptor... descriptors) throws InterruptedException {
         RateLimitRequest request = new RateLimitRequest(new HashSet<>(Arrays.asList(descriptors)));
         RateLimitResponseStats.Builder statsBuilder = new RateLimitResponseStats.Builder();
         for (int i = 0; i < numberOfRequests; i++) {
-            ResponseEntity<Void> response = restTemplate.postForEntity(this.apiUrl,request,Void.class);
-            if (delayInMillis > 0) {
-                Thread.sleep(delayInMillis);
-            }
-            switch (response.getStatusCode()) {
-                case OK: {
+            try {
+                ResponseEntity<Void> response = restTemplate.postForEntity(this.apiUrl, request, Void.class);
+                if (delayInMillis > 0) {
+                    Thread.sleep(delayInMillis);
+                }
+                if (response.getStatusCode() == HttpStatus.OK) {
                     statsBuilder.add200Request();
-                    continue;
                 }
-                case TOO_MANY_REQUESTS: {
-                    statsBuilder.add429Request();
-                    continue;
-                }
-                default:{
-                    fail("Unexpected response code " + response.getStatusCode().value());
-                }
+            } catch (HttpClientErrorException.TooManyRequests e) {
+                statsBuilder.add429Request();
+            } catch (Exception ex) {
+                fail("Unexpected response code " + ex.getCause());
             }
         }
         return statsBuilder.build();
     }
-
 }

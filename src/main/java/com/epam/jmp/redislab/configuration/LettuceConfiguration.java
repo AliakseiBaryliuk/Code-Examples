@@ -8,12 +8,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class LettuceConfiguration {
 
-//    @Bean
-//    //https://lettuce.io/core/release/reference/#_connection_pooling
-//    public StatefulRedisClusterConnection<String,String> lettuceRedisClusterConnection(){
-//        RedisClusterClient redisClient = RedisClusterClient.create("redis://redis-master-0:30000");
-//        StatefulRedisClusterConnection<String, String> connection = redisClient.connect();
-//        return connection;
-//    }
+    @Bean
+    //https://lettuce.io/core/release/reference/#_connection_pooling
+    public StatefulRedisClusterConnection<String,String> lettuceRedisClusterConnection(){
+        RedisClusterClient redisClient = RedisClusterClient.create("redis://redis-master-0:30000");
+        StatefulRedisClusterConnection<String, String> connection = redisClient.connect();
+        return connection;
+    }
 
 }

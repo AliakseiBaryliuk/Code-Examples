@@ -19,6 +19,14 @@ public class RateLimitRule {
 
     private final RateLimitTimeInterval timeInterval;
 
+    public Integer getAllowedNumberOfRequests() {
+        return allowedNumberOfRequests;
+    }
+
+    public RateLimitTimeInterval getTimeInterval() {
+        return timeInterval;
+    }
+
     @JsonCreator
     public RateLimitRule(@JsonProperty("accountId") Optional<String> accountId,
                          @JsonProperty("clientIp") Optional<String> clientIp,
